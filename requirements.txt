@@ -1,3 +1,9 @@
+# Botswana border simulation — pip install -r requirements.txt
+# Primary stack (README "Requirements"): numpy, scipy, matplotlib, pandas, simpy, seaborn
+# Used by: monte_carlo.py, des_model.py, sensitivity.py
+#
+# Full pin set from: pip freeze (project venv, reproducible installs)
+
 contourpy==1.3.0
 cycler==0.12.1
 fonttools==4.60.2
