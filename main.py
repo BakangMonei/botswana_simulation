@@ -12,10 +12,40 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 
 RESULTS_DIR = "results"
 _UI_FLAG = "BOTS_SIM_UI"
+
+
+def new_timestamped_results_dir(base: str = RESULTS_DIR) -> Path:
+    """Create results/<YYYY-MM-DD_HH-MM-SS>/ (with _1, _2, … on collision) and return its path."""
+    base_path = Path(base)
+    base_path.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    run_dir = base_path / stamp
+    n = 0
+    while run_dir.exists():
+        n += 1
+        run_dir = base_path / f"{stamp}_{n}"
+    run_dir.mkdir(parents=False, exist_ok=False)
+    return run_dir
+
+
+def latest_timestamped_run_dir(base: str = RESULTS_DIR) -> Path | None:
+    """Newest results subfolder that contains a Monte Carlo PNG (by modification time), or None."""
+    p = Path(base)
+    if not p.is_dir():
+        return None
+    candidates = [
+        d
+        for d in p.iterdir()
+        if d.is_dir() and (d / "monte_carlo_results.png").exists()
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda d: d.stat().st_mtime)
 
 
 def _project_css() -> str:
@@ -48,11 +78,18 @@ def run_full_pipeline(
     sens_samples: int,
     sens_base: dict,
     progress=None,
+    results_dir: str | None = None,
 ) -> dict:
-    """Run Monte Carlo → DES → sensitivity. Optional Streamlit progress tuple (container, bar)."""
+    """
+    Run Monte Carlo → DES → sensitivity.
+    Writes all PNGs and KPI CSV into results_dir (default: new results/<date_time>/ folder).
+    """
     from monte_carlo import run_monte_carlo
     from des_model import run_des
     from sensitivity import run_sensitivity
+
+    run_path = Path(results_dir) if results_dir else new_timestamped_results_dir()
+    out_dir = str(run_path)
 
     def tick(msg: str, frac: float):
         if progress:
@@ -64,7 +101,7 @@ def run_full_pipeline(
         n_simulations=mc_sims,
         n_trucks=mc_trucks,
         seed=seed,
-        results_dir=RESULTS_DIR,
+        results_dir=out_dir,
         show_plot=False,
         save=True,
     )
@@ -73,7 +110,7 @@ def run_full_pipeline(
         sim_hours=des_hours,
         n_replications=des_reps,
         base_seed=seed,
-        results_dir=RESULTS_DIR,
+        results_dir=out_dir,
         show_plot=False,
         save=True,
     )
@@ -82,12 +119,18 @@ def run_full_pipeline(
         n_samples=sens_samples,
         seed=seed,
         base=sens_base,
-        results_dir=RESULTS_DIR,
+        results_dir=out_dir,
         show_plot=False,
         save=True,
     )
     tick("Done.", 1.0)
-    return {"monte_carlo": mc, "des": des, "sensitivity": sens}
+    return {
+        "monte_carlo": mc,
+        "des": des,
+        "sensitivity": sens,
+        "run_dir": out_dir,
+        "run_stamp": run_path.name,
+    }
 
 
 def main_cli() -> None:
@@ -98,31 +141,33 @@ def main_cli() -> None:
     from sensitivity import DEFAULT_BASE
 
     seed = 42
-    Path(RESULTS_DIR).mkdir(parents=True, exist_ok=True)
+    run_dir = new_timestamped_results_dir()
+    out_dir = str(run_dir)
 
     print("\n" + "=" * 72)
     print("  BOTSWANA BORDER CLEARANCE — FULL PIPELINE (CLI)")
     print("=" * 72)
+    print(f"\nOutput folder: {out_dir}/")
 
     print("\n--- Monte Carlo ---")
-    mc = run_monte_carlo(seed=seed, results_dir=RESULTS_DIR, show_plot=False, save=True)
+    mc = run_monte_carlo(seed=seed, results_dir=out_dir, show_plot=False, save=True)
     print_summary(mc["summary"])
     print(f"Saved: {mc['figure_path']}")
 
     print("\n--- Discrete-event simulation ---")
-    des = run_des(base_seed=seed, results_dir=RESULTS_DIR, show_plot=False, save=True)
+    des = run_des(base_seed=seed, results_dir=out_dir, show_plot=False, save=True)
     print_des_tables(des["all_results"])
     print(f"Saved: {des['figure_path']}")
     print(f"Saved: {des['csv_path']}")
 
     print("\n--- Sensitivity ---")
     sens = run_sensitivity(
-        seed=seed, base=DEFAULT_BASE, results_dir=RESULTS_DIR, show_plot=False, save=True
+        seed=seed, base=DEFAULT_BASE, results_dir=out_dir, show_plot=False, save=True
     )
     print_sensitivity_report(sens)
     print(f"Saved: {sens['figure_path']}")
 
-    print("\nAll outputs in ./results/")
+    print(f"\nAll outputs in {out_dir}/")
     print("For the interactive UI:  python main.py  (no --cli)\n")
 
 
@@ -180,15 +225,76 @@ def main_streamlit() -> None:
 
     if not run and "last_run" not in st.session_state:
         st.info("Set parameters in the sidebar and click **Run full pipeline** to generate results.")
-        if Path(RESULTS_DIR, "monte_carlo_results.png").exists():
-            st.caption("Showing last saved images from `results/` (run again to refresh).")
+        preview = latest_timestamped_run_dir()
+        mc_p = des_p = sens_p = csv_p = None
+        stamp = None
+        if preview and (preview / "monte_carlo_results.png").exists():
+            stamp = preview.name
+            mc_p = preview / "monte_carlo_results.png"
+            des_p = preview / "des_results.png"
+            sens_p = preview / "sensitivity_results.png"
+            csv_p = preview / "kpi_summary.csv" if (preview / "kpi_summary.csv").exists() else None
+        elif Path(RESULTS_DIR, "monte_carlo_results.png").exists():
+            mc_p = Path(RESULTS_DIR) / "monte_carlo_results.png"
+            des_p = Path(RESULTS_DIR) / "des_results.png"
+            sens_p = Path(RESULTS_DIR) / "sensitivity_results.png"
+            c = Path(RESULTS_DIR) / "kpi_summary.csv"
+            csv_p = c if c.exists() else None
+        if mc_p and mc_p.exists():
+            loc = f"`{RESULTS_DIR}/{stamp}/`" if stamp else f"`{RESULTS_DIR}/`"
+            st.caption(f"Showing latest saved outputs from {loc}")
             c1, c2, c3 = st.columns(3)
             with c1:
-                st.image(str(Path(RESULTS_DIR) / "monte_carlo_results.png"), caption="Monte Carlo")
+                st.image(str(mc_p), caption="Monte Carlo")
             with c2:
-                st.image(str(Path(RESULTS_DIR) / "des_results.png"), caption="DES")
+                if des_p and des_p.exists():
+                    st.image(str(des_p), caption="DES")
             with c3:
-                st.image(str(Path(RESULTS_DIR) / "sensitivity_results.png"), caption="Sensitivity")
+                if sens_p and sens_p.exists():
+                    st.image(str(sens_p), caption="Sensitivity")
+            dl_stamp = stamp or "latest"
+            st.subheader("Download outputs")
+            d1, d2, d3, d4 = st.columns(4)
+            with d1:
+                if mc_p.exists():
+                    st.download_button(
+                        "Monte Carlo (PNG)",
+                        data=mc_p.read_bytes(),
+                        file_name=f"{dl_stamp}_monte_carlo_results.png",
+                        mime="image/png",
+                        key="preview_dl_mc",
+                        use_container_width=True,
+                    )
+            with d2:
+                if des_p and des_p.exists():
+                    st.download_button(
+                        "DES (PNG)",
+                        data=des_p.read_bytes(),
+                        file_name=f"{dl_stamp}_des_results.png",
+                        mime="image/png",
+                        key="preview_dl_des",
+                        use_container_width=True,
+                    )
+            with d3:
+                if sens_p and sens_p.exists():
+                    st.download_button(
+                        "Sensitivity (PNG)",
+                        data=sens_p.read_bytes(),
+                        file_name=f"{dl_stamp}_sensitivity_results.png",
+                        mime="image/png",
+                        key="preview_dl_sens",
+                        use_container_width=True,
+                    )
+            with d4:
+                if csv_p and csv_p.exists():
+                    st.download_button(
+                        "KPI summary (CSV)",
+                        data=csv_p.read_bytes(),
+                        file_name=f"{dl_stamp}_kpi_summary.csv",
+                        mime="text/csv",
+                        key="preview_dl_csv",
+                        use_container_width=True,
+                    )
         return
 
     if run:
@@ -220,6 +326,10 @@ def main_streamlit() -> None:
         return
 
     mc, des, sens = out["monte_carlo"], out["des"], out["sensitivity"]
+    run_dir = out.get("run_dir", RESULTS_DIR)
+    run_stamp = out.get("run_stamp", Path(run_dir).name)
+
+    st.success(f"Saved run to **`{run_dir}/`** (Monte Carlo, DES, sensitivity PNGs + `kpi_summary.csv`).")
 
     st.subheader("Key metrics")
     m1, m2, m3, m4 = st.columns(4)
@@ -256,14 +366,54 @@ def main_streamlit() -> None:
             hide_index=True,
         )
 
+    st.subheader("Download outputs")
+    st.caption("Filenames include the run timestamp so downloads stay unique.")
+    d1, d2, d3, d4 = st.columns(4)
+    mc_fp = mc.get("figure_path")
+    des_fp = des.get("figure_path")
+    sens_fp = sens.get("figure_path")
     csv_p = des.get("csv_path")
-    if csv_p and Path(csv_p).exists():
-        st.download_button(
-            label="Download KPI summary (CSV)",
-            data=Path(csv_p).read_bytes(),
-            file_name="kpi_summary.csv",
-            mime="text/csv",
-        )
+
+    with d1:
+        if mc_fp and Path(mc_fp).exists():
+            st.download_button(
+                "Monte Carlo (PNG)",
+                data=Path(mc_fp).read_bytes(),
+                file_name=f"{run_stamp}_monte_carlo_results.png",
+                mime="image/png",
+                key="run_dl_mc",
+                use_container_width=True,
+            )
+    with d2:
+        if des_fp and Path(des_fp).exists():
+            st.download_button(
+                "DES (PNG)",
+                data=Path(des_fp).read_bytes(),
+                file_name=f"{run_stamp}_des_results.png",
+                mime="image/png",
+                key="run_dl_des",
+                use_container_width=True,
+            )
+    with d3:
+        if sens_fp and Path(sens_fp).exists():
+            st.download_button(
+                "Sensitivity (PNG)",
+                data=Path(sens_fp).read_bytes(),
+                file_name=f"{run_stamp}_sensitivity_results.png",
+                mime="image/png",
+                key="run_dl_sens",
+                use_container_width=True,
+            )
+    with d4:
+        if csv_p and Path(csv_p).exists():
+            st.download_button(
+                "KPI summary (CSV)",
+                data=Path(csv_p).read_bytes(),
+                file_name=f"{run_stamp}_kpi_summary.csv",
+                mime="text/csv",
+                key="run_dl_csv",
+                use_container_width=True,
+            )
 
 
 if __name__ == "__main__":
