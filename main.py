@@ -176,14 +176,14 @@ def main_streamlit() -> None:
     import streamlit as st
 
     st.set_page_config(
-        page_title="Botswana Border Simulation",
+        page_title="BOTSWANA BORDER CLEARANCE SIMULATION",
         page_icon="🚛",
         layout="wide",
         initial_sidebar_state="expanded",
     )
     st.markdown(_project_css(), unsafe_allow_html=True)
 
-    st.title("Botswana border clearance simulation")
+    st.title("BOTSWANA BORDER CLEARANCE SIMULATION")
     st.markdown(
         '<p class="highlight-box"><strong>Monte Carlo</strong>, <strong>discrete-event (SimPy)</strong>, '
         "and <strong>sensitivity</strong> models in one place. Adjust parameters in the sidebar, "
