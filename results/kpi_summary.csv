@@ -1,6 +1,0 @@
-Scenario,Mean CT (min),Mean CT (hrs),P95 CT (hrs),Utilisation (%),Mean queue,Trucks processed
-Baseline,705.0,11.75,20.11,96.3,116.16,28.0
-S1: 24-hr ops,652.9,10.88,18.66,95.4,41.36,29.0
-S2: ICT upgrade,690.8,11.51,19.68,96.6,115.93,35.0
-S3: Pre-clearance,696.4,11.61,20.02,97.5,105.26,29.0
-S4: Combined,618.4,10.31,18.0,95.2,20.61,36.0
