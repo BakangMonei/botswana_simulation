@@ -1,11 +1,10 @@
-# Botswana Border Clearance Simulation - Supervisor Presentation Script
+# Botswana Border Clearance Simulation - Presentation Script
 
 Use this document as a step-by-step speaking guide. You can read it directly in order.
 
 ---
 
 ## 1) Opening (What this project is)
-
 
 This project is a simulation study of export-truck border clearance performance in Botswana, focused on three border-post contexts: Tlokweng, Kazungula, and Ramokgwebana.
 
@@ -311,8 +310,6 @@ Prioritize interventions shown as highest leverage in sensitivity and scenario g
 ---
 
 ## 18) One-minute closing script
-
-Thank you, Supervisor.
 
 This project provides a simulation-based decision framework for Botswana border logistics reform. It does not claim perfect prediction, but it gives structured, quantitative guidance on where delays come from, which interventions matter most, and how uncertainty affects policy confidence.
 
